@@ -20,6 +20,7 @@ local config = {
     full = "█",
     empty = "░",
   },
+  codex_script = nil, -- explicit path to codex-limits.py, overrides auto-detection
 }
 
 -- Cached usage data
@@ -694,8 +695,15 @@ local function sync_codex_shared_state(entry)
   codex_last_error = entry.last_error
 end
 
--- Path to the bundled Codex helper script
-local CODEX_SCRIPT = resolve_codex_script()
+-- Path to the bundled Codex helper script (resolved lazily on first use)
+local CODEX_SCRIPT = nil
+local function get_codex_script()
+  if not CODEX_SCRIPT then
+    CODEX_SCRIPT = config.codex_script or resolve_codex_script()
+    wezterm.log_info("agent-quota: codex script resolved to: " .. tostring(CODEX_SCRIPT))
+  end
+  return CODEX_SCRIPT
+end
 
 -- Format a Unix timestamp as time-until string
 local function time_until_unix(ts)
@@ -752,7 +760,7 @@ local function fetch_codex_limits()
   -- No running gate: quota is account-level and always fetchable.
   -- is_codex_running() is used only in the display layer as an activity hint.
 
-  if not file_exists(CODEX_SCRIPT) then
+  if not file_exists(get_codex_script()) then
     codex_cached = { error = "missing bundled codex helper" }
     codex_errors = codex_errors + 1
     codex_last_error = "missing bundled codex helper"
@@ -821,7 +829,7 @@ local function fetch_codex_limits()
 
   -- Query Codex rate limits via the helper script
   local python_cmd = is_windows and "python" or "python3"
-  local success, stdout, stderr = wezterm.run_child_process({ python_cmd, CODEX_SCRIPT })
+  local success, stdout, stderr = wezterm.run_child_process({ python_cmd, get_codex_script() })
   local raw = stdout and stdout:match("^%s*(.-)%s*$") or ""
 
   if raw == "" then
@@ -1244,6 +1252,7 @@ end
 function M.apply_to_config(c, opts)
   if opts then
     config = deep_merge(config, opts)
+    CODEX_SCRIPT = nil -- reset so get_codex_script() re-resolves with new config
   end
 
   -- Add keybinding to open usage dashboard
