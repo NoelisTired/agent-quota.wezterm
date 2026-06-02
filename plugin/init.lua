@@ -21,6 +21,7 @@ local config = {
     empty = "░",
   },
   codex_script = nil, -- explicit path to codex-limits.py, overrides auto-detection
+  compact = false,    -- hide reset countdowns to save space
 }
 
 -- Cached usage data
@@ -1192,7 +1193,9 @@ local function build_status_string(data, window, pane)
     end
     claude_str = claude_str
       .. usage_color_esc(five_pct) .. string.format("%.0f%%", five_pct)
-      .. DIM .. " (" .. time_until(five_reset) .. ")"
+    if not config.compact then
+      claude_str = claude_str .. DIM .. " (" .. time_until(five_reset) .. ")"
+    end
 
     claude_str = claude_str .. DIM .. "  " .. config.icons.week .. " "
       .. BRIGHT .. "7d "
@@ -1201,7 +1204,9 @@ local function build_status_string(data, window, pane)
     end
     claude_str = claude_str
       .. usage_color_esc(seven_pct) .. string.format("%.0f%%", seven_pct)
-      .. DIM .. " (" .. time_until(seven_reset) .. ")"
+    if not config.compact then
+      claude_str = claude_str .. DIM .. " (" .. time_until(seven_reset) .. ")"
+    end
   end
 
   -- ── Codex ───────────────────────────────────────────────
@@ -1234,7 +1239,7 @@ local function build_status_string(data, window, pane)
     end
     codex_str = codex_str
       .. usage_color_esc(cd.primary_pct) .. string.format("%.0f%%", cd.primary_pct)
-    if cd.primary_reset then
+    if cd.primary_reset and not config.compact then
       codex_str = codex_str .. DIM .. " (" .. cd.primary_reset .. ")"
     end
     if cd.secondary_pct ~= nil then
@@ -1245,7 +1250,7 @@ local function build_status_string(data, window, pane)
       end
       codex_str = codex_str
         .. usage_color_esc(cd.secondary_pct) .. string.format("%.0f%%", cd.secondary_pct)
-      if cd.secondary_reset then
+      if cd.secondary_reset and not config.compact then
         codex_str = codex_str .. DIM .. " (" .. cd.secondary_reset .. ")"
       end
     end
