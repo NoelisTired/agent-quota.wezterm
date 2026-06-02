@@ -133,8 +133,13 @@ local function resolve_codex_script()
   end
 
   if plugin_dir then
-    candidates[#candidates + 1] = plugin_dir .. "/../codex-limits.py"
+    local repo_root = dirname(plugin_dir)
+    if repo_root then
+      candidates[#candidates + 1] = repo_root .. "/codex-limits.py"
+      candidates[#candidates + 1] = repo_root .. "\\codex-limits.py"
+    end
     candidates[#candidates + 1] = plugin_dir .. "/codex-limits.py"
+    candidates[#candidates + 1] = plugin_dir .. "\\codex-limits.py"
   end
 
   if home ~= "" then
