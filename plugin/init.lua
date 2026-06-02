@@ -2,6 +2,9 @@ local wezterm = require("wezterm")
 
 local M = {}
 
+local is_windows = type(wezterm.target_triple) == "string"
+  and wezterm.target_triple:find("windows") ~= nil
+
 -- Config defaults
 local config = {
   poll_interval_secs = 60,
@@ -120,7 +123,7 @@ local function file_exists(path)
 end
 
 local function resolve_codex_script()
-  local home = os.getenv("HOME") or ""
+  local home = os.getenv("HOME") or os.getenv("USERPROFILE") or ""
   local plugin_dir = dirname(current_file_path())
   local candidates = {}
 
@@ -135,9 +138,15 @@ local function resolve_codex_script()
   end
 
   if home ~= "" then
-    candidates[#candidates + 1] = home .. "/dev/Plugins/wezterm-quota-limit/codex-limits.py"
-    candidates[#candidates + 1] = home .. "/dev/Plugins/agent-quota.wezterm/codex-limits.py"
-    candidates[#candidates + 1] = home .. "/.local/share/wezterm/codex-limits.py"
+    if is_windows then
+      local appdata = os.getenv("LOCALAPPDATA") or (home .. "\\AppData\\Local")
+      candidates[#candidates + 1] = appdata .. "\\wezterm\\codex-limits.py"
+      candidates[#candidates + 1] = home .. "\\dev\\Plugins\\agent-quota.wezterm\\codex-limits.py"
+    else
+      candidates[#candidates + 1] = home .. "/dev/Plugins/wezterm-quota-limit/codex-limits.py"
+      candidates[#candidates + 1] = home .. "/dev/Plugins/agent-quota.wezterm/codex-limits.py"
+      candidates[#candidates + 1] = home .. "/.local/share/wezterm/codex-limits.py"
+    end
   end
 
   for _, candidate in ipairs(candidates) do
@@ -146,7 +155,34 @@ local function resolve_codex_script()
     end
   end
 
-  if home ~= "" then
+  if is_windows then
+    local appdata = os.getenv("LOCALAPPDATA") or (home ~= "" and (home .. "\\AppData\\Local") or "")
+    if appdata ~= "" then
+      local plugins_dir = appdata .. "\\wezterm\\plugins"
+      local ok, stdout = wezterm.run_child_process({
+        "powershell", "-NoProfile", "-Command",
+        "Get-ChildItem -Path '"
+          .. plugins_dir:gsub("'", "''")
+          .. "' -Recurse -Depth 5 -Filter 'codex-limits.py' -ErrorAction SilentlyContinue"
+          .. " | Select-Object -ExpandProperty FullName",
+      })
+      if ok and stdout and stdout ~= "" then
+        local selected = nil
+        for line in stdout:gmatch("[^\r\n]+") do
+          if not selected then
+            selected = line
+          end
+          if line:find("agent%-quota%.wezterm", 1, false) then
+            selected = line
+            break
+          end
+        end
+        if selected and file_exists(selected) then
+          return selected
+        end
+      end
+    end
+  elseif home ~= "" then
     local plugins_dir = home .. "/.local/share/wezterm/plugins"
     local ok, stdout = wezterm.run_child_process({
       "find",
@@ -215,6 +251,11 @@ end
 local function cache_prefix()
   local user = os.getenv("USER") or os.getenv("USERNAME") or "user"
   user = user:gsub("[^%w_.-]", "_")
+  if is_windows then
+    local tmp = os.getenv("TEMP") or os.getenv("TMP")
+      or (os.getenv("USERPROFILE") or "C:\\Users\\Default") .. "\\AppData\\Local\\Temp"
+    return tmp .. "\\wezterm-quota-limit-" .. user
+  end
   return "/tmp/wezterm-quota-limit-" .. user
 end
 
@@ -350,6 +391,11 @@ local function write_json_file(path, value)
 
   f:write(encoded)
   f:close()
+
+  -- Windows: os.rename fails if destination exists; remove it first
+  if is_windows then
+    os.remove(path)
+  end
 
   local renamed, err = os.rename(tmp_path, path)
   if not renamed then
@@ -515,6 +561,23 @@ local function build_cache_entry(data, error_count, last_err, now, retry_secs)
 end
 
 local function lock_age_secs(lock_dir)
+  if is_windows then
+    local ok, stdout = wezterm.run_child_process({
+      "powershell", "-NoProfile", "-Command",
+      "[int64]([DateTimeOffset]::new((Get-Item -LiteralPath '"
+        .. lock_dir:gsub("'", "''")
+        .. "' -ErrorAction Stop).LastWriteTimeUtc)).ToUnixTimeSeconds()",
+    })
+    if not ok or not stdout then
+      return nil
+    end
+    local mtime = tonumber(stdout:match("(%d+)"))
+    if not mtime then
+      return nil
+    end
+    return os.time() - mtime
+  end
+
   local ok, stdout = wezterm.run_child_process({ "stat", "-c", "%Y", lock_dir })
   if not ok or not stdout then
     return nil
@@ -529,22 +592,26 @@ local function lock_age_secs(lock_dir)
 end
 
 local function acquire_lock(lock_dir)
-  local ok = wezterm.run_child_process({ "mkdir", lock_dir })
+  local mkdir_cmd = is_windows and { "cmd", "/c", "mkdir", lock_dir } or { "mkdir", lock_dir }
+  local rmdir_cmd = is_windows and { "cmd", "/c", "rmdir", lock_dir } or { "rmdir", lock_dir }
+
+  local ok = wezterm.run_child_process(mkdir_cmd)
   if ok then
     return true
   end
 
   local age = lock_age_secs(lock_dir)
   if age and age > LOCK_TIMEOUT_SECS then
-    wezterm.run_child_process({ "rmdir", lock_dir })
-    return wezterm.run_child_process({ "mkdir", lock_dir })
+    wezterm.run_child_process(rmdir_cmd)
+    return wezterm.run_child_process(mkdir_cmd)
   end
 
   return false
 end
 
 local function release_lock(lock_dir)
-  wezterm.run_child_process({ "rmdir", lock_dir })
+  local rmdir_cmd = is_windows and { "cmd", "/c", "rmdir", lock_dir } or { "rmdir", lock_dir }
+  wezterm.run_child_process(rmdir_cmd)
 end
 
 local function cacheable_data(data, now)
@@ -635,25 +702,33 @@ local function time_until_unix(ts)
   return string.format("%dd%dh", math.floor(diff / 86400), math.floor((diff % 86400) / 3600))
 end
 
--- Returns true if an interactive Codex session (tty-attached, not VS Code app-server daemon) is running.
--- Uses ps rather than /proc to work reliably in WezTerm's GUI subprocess environment.
+-- Returns true if a Codex session is running.
 -- Used only as a display hint — never gates quota fetching.
 local function is_codex_running()
   local now = os.time()
   if now - codex_running_checked_at < PROCESS_CHECK_TTL then
     return codex_running_cached
   end
-  -- Single ps call; parse in Lua instead of spawning sh + grep + grep
-  local ok, stdout = wezterm.run_child_process({ "ps", "-eo", "comm=,tty=" })
+
   local found = false
-  if ok and stdout then
-    for line in stdout:gmatch("[^\n]+") do
-      if line:match("^codex ") and not line:match("%s%?$") then
-        found = true
-        break
+  if is_windows then
+    local ok, stdout = wezterm.run_child_process({
+      "tasklist", "/FI", "IMAGENAME eq codex.exe", "/NH", "/FO", "CSV",
+    })
+    found = ok and stdout ~= nil and stdout:find('"codex.exe"') ~= nil
+  else
+    -- Single ps call; parse in Lua instead of spawning sh + grep + grep
+    local ok, stdout = wezterm.run_child_process({ "ps", "-eo", "comm=,tty=" })
+    if ok and stdout then
+      for line in stdout:gmatch("[^\n]+") do
+        if line:match("^codex ") and not line:match("%s%?$") then
+          found = true
+          break
+        end
       end
     end
   end
+
   codex_running_cached = found
   codex_running_checked_at = now
   return codex_running_cached
@@ -740,7 +815,8 @@ local function fetch_codex_limits()
   local previous_errors = tonumber(locked_cache and locked_cache.error_count) or codex_errors or 0
 
   -- Query Codex rate limits via the helper script
-  local success, stdout, stderr = wezterm.run_child_process({ "python3", CODEX_SCRIPT })
+  local python_cmd = is_windows and "python" or "python3"
+  local success, stdout, stderr = wezterm.run_child_process({ python_cmd, CODEX_SCRIPT })
   local raw = stdout and stdout:match("^%s*(.-)%s*$") or ""
 
   if raw == "" then
@@ -931,8 +1007,17 @@ local function is_claude_running()
   if now - claude_running_checked_at < PROCESS_CHECK_TTL then
     return claude_running_cached
   end
-  local ok, stdout = wezterm.run_child_process({ "pgrep", "-x", "claude" })
-  claude_running_cached = ok and stdout and stdout:match("%d") ~= nil
+
+  if is_windows then
+    local ok, stdout = wezterm.run_child_process({
+      "tasklist", "/FI", "IMAGENAME eq claude.exe", "/NH", "/FO", "CSV",
+    })
+    claude_running_cached = ok and stdout ~= nil and stdout:find('"claude.exe"') ~= nil
+  else
+    local ok, stdout = wezterm.run_child_process({ "pgrep", "-x", "claude" })
+    claude_running_cached = ok and stdout ~= nil and stdout:match("%d") ~= nil
+  end
+
   claude_running_checked_at = now
   return claude_running_cached
 end
