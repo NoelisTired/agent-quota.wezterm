@@ -96,10 +96,21 @@ local function current_file_path()
     return nil
   end
 
-  local info = dbg.getinfo(1, "S")
-  local source = info and info.source or nil
-  if type(source) == "string" and source:sub(1, 1) == "@" then
-    return source:sub(2)
+  -- Walk the call stack: WezTerm's plugin loader may not set level-1 source
+  -- to a file path, so scan upward until we find a level whose source ends in
+  -- init.lua (i.e. this file).
+  for level = 1, 20 do
+    local info = dbg.getinfo(level, "S")
+    if not info then
+      break
+    end
+    local source = info.source
+    if type(source) == "string" and source:sub(1, 1) == "@" then
+      local path = source:sub(2)
+      if path:find("[/\\]init%.lua$") or path:find("^init%.lua$") then
+        return path
+      end
+    end
   end
   return nil
 end
