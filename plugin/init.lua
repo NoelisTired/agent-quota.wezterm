@@ -11,8 +11,10 @@ local config = {
   position = "right", -- "left" or "right"
   dashboard_key = { key = "u", mods = "CTRL|SHIFT" }, -- keybind to open dashboard
   icons = {
-    bolt = "⚡",
-    week = "▪",
+    claude = "▲",
+    codex  = "◆",
+    week   = "▪",
+    bolt   = "▲", -- legacy alias
   },
   bars = {
     enabled = true,
@@ -1169,14 +1171,15 @@ local DASHBOARD_URL = "https://console.anthropic.com/settings/usage"
 local function build_status_string(data, window, pane)
   -- ── Claude ──────────────────────────────────────────────
   local claude_str
+  local ci = " " .. (config.icons.claude or config.icons.bolt or "▲") .. " "
   if data.not_running then
-    claude_str = DIM .. " ⚡ " .. BRIGHT .. "Claude: " .. DIM .. "not running"
+    claude_str = DIM .. ci .. BRIGHT .. "Claude: " .. DIM .. "not running"
   elseif data.syncing then
-    claude_str = DIM .. " ⚡ " .. BRIGHT .. "Claude: " .. DIM .. "syncing..."
+    claude_str = DIM .. ci .. BRIGHT .. "Claude: " .. DIM .. "syncing..."
   elseif is_rate_limited_error(data.error) then
-    claude_str = DIM .. " ⚡ " .. BRIGHT .. "Claude: " .. DIM .. "syncing..."
+    claude_str = DIM .. ci .. BRIGHT .. "Claude: " .. DIM .. "syncing..."
   elseif data.error then
-    claude_str = DIM .. " ⚡ Claude: "
+    claude_str = DIM .. ci .. "Claude: "
       .. hex_to_fg("#f7768e") .. tostring(data.error)
   else
     local five_pct   = data.five_hour and data.five_hour.utilization or 0
@@ -1186,7 +1189,7 @@ local function build_status_string(data, window, pane)
     local five_bar   = usage_bar_esc(five_pct)
     local seven_bar  = usage_bar_esc(seven_pct)
 
-    claude_str = DIM .. " ⚡ " .. BRIGHT .. "Claude: "
+    claude_str = DIM .. ci .. BRIGHT .. "Claude: "
       .. BRIGHT .. "5h "
     if five_bar then
       claude_str = claude_str .. five_bar .. DIM .. " "
@@ -1213,26 +1216,27 @@ local function build_status_string(data, window, pane)
   local codex_str
   local cd, codex_active = fetch_codex_limits()
 
+  local coi = " " .. (config.icons.codex or "◆") .. " "
   if not codex_active then
-    codex_str = DIM .. " ✦ " .. BRIGHT .. "Codex: " .. DIM .. "not running"
+    codex_str = DIM .. coi .. BRIGHT .. "Codex: " .. DIM .. "not running"
 
   elseif cd.error == "not running" then
-    codex_str = DIM .. " ✦ " .. BRIGHT .. "Codex: " .. DIM .. "loading..."
+    codex_str = DIM .. coi .. BRIGHT .. "Codex: " .. DIM .. "loading..."
   elseif cd.syncing then
-    codex_str = DIM .. " ✦ " .. BRIGHT .. "Codex: " .. DIM .. "syncing..."
+    codex_str = DIM .. coi .. BRIGHT .. "Codex: " .. DIM .. "syncing..."
 
   elseif cd.ready then
-    codex_str = DIM .. " ✦ " .. BRIGHT .. "Codex: " .. hex_to_fg("#9ece6a") .. "ready"
+    codex_str = DIM .. coi .. BRIGHT .. "Codex: " .. hex_to_fg("#9ece6a") .. "ready"
 
   elseif cd.error then
-    codex_str = DIM .. " ✦ Codex: " .. hex_to_fg("#f7768e") .. tostring(cd.error)
+    codex_str = DIM .. coi .. "Codex: " .. hex_to_fg("#f7768e") .. tostring(cd.error)
 
   elseif cd.primary_pct ~= nil then
     -- Full usage data from app-server
     local win_label = cd.primary_mins and string.format("%dh", math.floor(cd.primary_mins / 60)) or "5h"
     local primary_bar = usage_bar_esc(cd.primary_pct)
     local secondary_bar = cd.secondary_pct ~= nil and usage_bar_esc(cd.secondary_pct) or nil
-    codex_str = DIM .. " ✦ " .. BRIGHT .. "Codex: "
+    codex_str = DIM .. coi .. BRIGHT .. "Codex: "
       .. BRIGHT .. win_label .. " "
     if primary_bar then
       codex_str = codex_str .. primary_bar .. DIM .. " "
@@ -1256,7 +1260,7 @@ local function build_status_string(data, window, pane)
     end
 
   else
-    codex_str = DIM .. " ✦ " .. BRIGHT .. "Codex: " .. DIM .. "loading..."
+    codex_str = DIM .. coi .. BRIGHT .. "Codex: " .. DIM .. "loading..."
   end
 
   -- ── Join with separator ──────────────────────────────────
