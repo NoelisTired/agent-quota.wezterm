@@ -11,10 +11,10 @@ local config = {
   position = "right", -- "left" or "right"
   dashboard_key = { key = "u", mods = "CTRL|SHIFT" }, -- keybind to open dashboard
   icons = {
-    claude = "▲",
-    codex  = "◆",
+    claude = "⚡", -- override to taste, e.g. "▲"
+    codex  = "✦", -- override to taste, e.g. "◆"
     week   = "▪",
-    bolt   = "▲", -- legacy alias
+    bolt   = "⚡", -- legacy alias
   },
   bars = {
     enabled = true,
@@ -1171,7 +1171,7 @@ local DASHBOARD_URL = "https://console.anthropic.com/settings/usage"
 local function build_status_string(data, window, pane)
   -- ── Claude ──────────────────────────────────────────────
   local claude_str
-  local ci = " " .. (config.icons.claude or config.icons.bolt or "▲") .. " "
+  local ci = " " .. (config.icons.claude or config.icons.bolt or "⚡") .. " "
   if data.not_running then
     claude_str = DIM .. ci .. BRIGHT .. "Claude: " .. DIM .. "not running"
   elseif data.syncing then
@@ -1216,7 +1216,7 @@ local function build_status_string(data, window, pane)
   local codex_str
   local cd, codex_active = fetch_codex_limits()
 
-  local coi = " " .. (config.icons.codex or "◆") .. " "
+  local coi = " " .. (config.icons.codex or "✦") .. " "
   if not codex_active then
     codex_str = DIM .. coi .. BRIGHT .. "Codex: " .. DIM .. "not running"
 
